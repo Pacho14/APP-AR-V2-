@@ -356,71 +356,42 @@
 
         <!-- CONTROLES -->
         <div class="controls">
-            <h2>⚙️ Configuración</h2>
+            <h2>🐢 Tortuga AR</h2>
 
             <div class="info-box">
                 📱 <strong>Cómo usar:</strong><br>
-                1. Apunta la cámara a un marcador<br>
+                1. Apunta la cámara al marcador TURTLE MARK<br>
                 2. El sistema detectará automáticamente<br>
-                3. El modelo se enviará a la visualización
+                3. Verás la Tortuga en 3D
             </div>
 
-            <div class="target-list">
-                <strong style="color: #333; display: block; margin-bottom: 10px;">📍 Marcadores disponibles:</strong>
-                <div class="target-item">
-                    <span class="target-icon">🐠</span>
-                    <span>Pez</span>
-                </div>
-                <div class="target-item">
-                    <span class="target-icon">🐢</span>
-                    <span>Tortuga</span>
-                </div>
-                <div class="target-item">
-                    <span class="target-icon">🦈</span>
-                    <span>Tiburón</span>
-                </div>
-            </div>
-
-            <div class="api-status" id="api-status">
-                🔌 Conectando a API...
+            <div class="api-status connected">
+                ✅ Sistema listo - Escaneando marcador...
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/GLTFLoader.js"></script>
+
     <script>
-        // ==================== CONFIGURACIÓN ====================
-        const API_BASE_URL = 'http://192.168.40.11:3001/api';
-
-        // Mapeo de marcadores a modelos
-        const MARKERS_CONFIG = {
-            0: { name: 'Pez', model: 'Pez1.glb', icon: '🐠' },
-            1: { name: 'Tortuga', model: 'tortuga.glb', icon: '🐢' },
-            2: { name: 'Tiburón', model: 'tiburon.glb', icon: '🦈' }
-        };
-
         // ==================== VARIABLES DE ESTADO ====================
         let mindarController = null;
         let scene, camera, renderer;
-        let lastDetectedMarker = null;
-        let lastModelSentTime = 0;
-        const SEND_COOLDOWN = 3000; // 3 segundos entre envíos
-        let apiConnected = false;
-        let frameCount = 0;
-        let lastFpsUpdate = Date.now();
+        let turtleModel = null;
+        let gltfLoader = null;
 
         // ==================== INICIALIZACIÓN ====================
         async function init() {
             try {
-                // Verificar conexión con API
-                await checkAPIConnection();
-
+                console.log('🔧 Inicializando...');
+                
                 // Inicializar Three.js
                 initThreeJS();
 
                 // Inicializar MindAR
                 await initMindAR();
 
-                updateStatus('Listo', true);
+                updateStatus('✅ Escáner AR Activo', true);
                 console.log('✅ Sistema inicializado correctamente');
 
             } catch (error) {
@@ -440,9 +411,12 @@
                 1000
             );
             
-            renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
             renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-            renderer.setClearColor(0x000000);
+            renderer.setClearColor(0x000000, 0);
+
+            // Loader para modelos GLTF
+            gltfLoader = new THREE.GLTFLoader();
 
             // Luces básicas
             const light = new THREE.HemisphereLight(0xffffff, 0x000000, 1);
@@ -459,95 +433,74 @@
                     debugMode: false
                 });
 
-                // Cargar targets
+                // Cargar el marcador TURTLE
                 await mindarController.addImageTargets('TURTLE MARK.mind');
                 
+                // Escuchar eventos de detección
                 mindarController.addEventListener('targetFound', onTargetFound);
                 mindarController.addEventListener('targetLost', onTargetLost);
 
                 // Iniciar el controlador
                 await mindarController.start();
 
-                console.log('✅ MindAR inicializado');
-                updateStatus('✅ Escáner AR Activo', true);
+                console.log('✅ MindAR inicializado - Esperando marcador...');
 
             } catch (error) {
                 console.error('❌ Error al inicializar MindAR:', error);
-                updateStatus('⚠️ Modo Demo (sin detección AR)', false);
+                throw error;
             }
         }
 
-        // ==================== DETECCIÓN DE MARCADORES ====================
+        // ==================== DETECCIÓN DE MARCADOR ====================
         function onTargetFound(event) {
-            const targetIndex = event.targetIndex;
-            const markerConfig = MARKERS_CONFIG[targetIndex];
+            console.log('✅ ¡TORTUGA DETECTADA!');
+            
+            document.getElementById('status-dot').classList.add('detected');
+            document.getElementById('status-text').textContent = '🐢 Tortu detectada';
+            
+            document.getElementById('model-detected-alert').classList.remove('model-detected-hidden');
+            document.getElementById('detected-model-name').textContent = 'TORTUGA';
+            
+            updateBottomInfo('Detectada', 'Tortuga');
 
-            if (!markerConfig) {
-                console.warn('⚠️ Marcador desconocido:', targetIndex);
-                return;
+            // Cargar el modelo 3D si no está cargado
+            if (!turtleModel) {
+                loadTurtleModel();
             }
-
-            lastDetectedMarker = {
-                index: targetIndex,
-                name: markerConfig.name,
-                model: markerConfig.model,
-                icon: markerConfig.icon
-            };
-
-            console.log(`✅ Detectado: ${markerConfig.icon} ${markerConfig.name}`);
-            updateDetectionUI(markerConfig);
-
-            // Enviar al servidor
-            sendModelToAPI(markerConfig.model, markerConfig.name);
         }
 
         function onTargetLost(event) {
-            const targetIndex = event.targetIndex;
-            console.log('⚠️ Marcador perdido:', targetIndex);
+            console.log('⚠️ Tortuga perdida');
             
-            document.getElementById('model-detected-alert').classList.add('model-detected-hidden');
             document.getElementById('status-dot').classList.remove('detected');
-            updateBottomInfo('-', '-');
-        }
-
-        // ==================== COMUNICACIÓN CON API ====================
-        async function checkAPIConnection() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/health`);
-                if (response.ok) {
-                    apiConnected = true;
-                    updateAPIStatus(true);
-                    console.log('✅ API conectada');
-                } else {
-                    throw new Error('API no responde');
-                }
-            } catch (error) {
-                console.error('❌ Error de conexión con API:', error);
-                apiConnected = false;
-                updateAPIStatus(false);
-            }
-        }
-
-        async function sendModelToAPI(modelPath, markerName) {
-            const now = Date.now();
+            document.getElementById('status-text').textContent = 'Escaneando...';
+            document.getElementById('model-detected-alert').classList.add('model-detected-hidden');
             
-            // Cooldown para evitar spam
-            if (now - lastModelSentTime < SEND_COOLDOWN) {
-                console.log('⏱️ Esperando antes de enviar nuevamente...');
-                return;
-            }
+            updateBottomInfo('-', '-');
 
-            if (!apiConnected) {
-                console.warn('⚠️ API no conectada, no se puede enviar el modelo');
-                return;
+            // Ocultar modelo
+            if (turtleModel) {
+                turtleModel.visible = false;
             }
+        }
 
-            try {
-                const response = await fetch(`${API_BASE_URL}/send-model`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+        // ==================== CARGAR MODELO 3D ====================
+        function loadTurtleModel() {
+            gltfLoader.load('TURTLE.glb', (gltf) => {
+                if (turtleModel) {
+                    scene.remove(turtleModel);
+                }
+                
+                turtleModel = gltf.scene;
+                turtleModel.scale.set(2, 2, 2);
+                turtleModel.position.set(0, 0, 0);
+                
+                scene.add(turtleModel);
+                console.log('✅ Modelo TORTUGA cargado');
+            }, undefined, (error) => {
+                console.error('❌ Error cargando modelo TORTUGA:', error);
+            });
+        }
                     body: JSON.stringify({
                         name: modelPath.split('/').pop(),
                         path: modelPath,
@@ -558,42 +511,11 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    lastModelSentTime = now;
-                    console.log('✅ Modelo enviado a API:', data.data);
-                } else {
-                    console.error('❌ Error en respuesta de API:', data.error);
-                }
-
-            } catch (error) {
-                console.error('❌ Error al enviar modelo:', error);
-                updateAPIStatus(false);
-            }
-        }
-
         // ==================== ACTUALIZACIÓN DE UI ====================
-        function updateDetectionUI(markerConfig) {
-            const alert = document.getElementById('model-detected-alert');
-            const nameSpan = document.getElementById('detected-model-name');
-            
-            nameSpan.textContent = `${markerConfig.icon} ${markerConfig.name}`;
-            alert.classList.remove('model-detected-hidden');
-
-            // Animar el punto de estado
-            const dot = document.getElementById('status-dot');
-            dot.classList.add('detected');
-
-            // Actualizar info inferior
-            updateBottomInfo(markerConfig.model, markerConfig.name);
-
-            // Ocultar notificación después de 2 segundos
-            setTimeout(() => {
-                alert.classList.add('model-detected-hidden');
-            }, 2000);
-        }
-
-        function updateBottomInfo(model, marker) {
-            document.getElementById('bottom-model').textContent = model || '-';
-            document.getElementById('bottom-marker').textContent = marker || '-';
+        function updateBottomInfo(estado, modelo) {
+            document.getElementById('bottom-status').textContent = estado || '-';
+            document.getElementById('bottom-model').textContent = modelo || '-';
+            document.getElementById('bottom-marker').textContent = 'TURTLE';
         }
 
         function updateStatus(text, isActive) {
@@ -607,17 +529,8 @@
             }
         }
 
-        function updateAPIStatus(connected) {
-            const statusEl = document.getElementById('api-status');
-            
-            if (connected) {
-                statusEl.textContent = '✅ API conectada';
-                statusEl.classList.add('connected');
-            } else {
-                statusEl.textContent = '❌ API desconectada';
-                statusEl.classList.remove('connected');
-            }
-        }
+        let frameCount = 0;
+        let lastFpsUpdate = Date.now();
 
         function updateFPS() {
             frameCount++;
@@ -644,9 +557,6 @@
 
         // ==================== INICIO ====================
         window.addEventListener('load', init);
-
-        // Verificar API cada 10 segundos
-        setInterval(checkAPIConnection, 10000);
     </script>
 </body>
 </html>
