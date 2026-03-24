@@ -374,28 +374,31 @@
     <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
-        // ==================== VARIABLES DE ESTADO ====================
+        // Variables globales
         let mindarController = null;
         let scene, camera, renderer;
         let turtleModel = null;
         let gltfLoader = null;
+        let frameCount = 0;
+        let lastFpsUpdate = Date.now();
 
-        // ==================== INICIALIZACIÓN ====================
+        // Inicialización
         async function init() {
             try {
-                console.log('🔧 Inicializando...');
+                console.log('🎯 Inicializando Tortuga AR...');
                 
                 // Inicializar Three.js
                 initThreeJS();
-
+                console.log('✅ Three.js inicializado');
+                
                 // Inicializar MindAR
                 await initMindAR();
-
+                console.log('✅ MindAR inicializado');
+                
                 updateStatus('✅ Escáner AR Activo', true);
-                console.log('✅ Sistema inicializado correctamente');
 
             } catch (error) {
-                console.error('❌ Error en inicialización:', error);
+                console.error('❌ Error fatal:', error);
                 updateStatus('Error: ' + error.message, false);
             }
         }
@@ -411,66 +414,74 @@
                 1000
             );
             
-            renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas, 
+                antialias: true, 
+                alpha: true 
+            });
             renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             renderer.setClearColor(0x000000, 0);
 
-            // Loader para modelos GLTF
-            gltfLoader = new THREE.GLTFLoader();
-
-            // Luces básicas
+            // Lighting
             const light = new THREE.HemisphereLight(0xffffff, 0x000000, 1);
             scene.add(light);
 
-            // Iniciar render loop
+            const directLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directLight.position.set(5, 10, 5);
+            scene.add(directLight);
+
+            // Loader
+            gltfLoader = new THREE.GLTFLoader();
+
+            // Iniciar animación
             animate();
         }
 
         async function initMindAR() {
             try {
+                if (!window.MINDAR || !window.MINDAR.IMAGE) {
+                    throw new Error('MINDAR no está disponible. Intenta recargar.');
+                }
+
                 mindarController = new window.MINDAR.IMAGE.Controller({
                     imageSource: document.getElementById('canvas-ar'),
                     debugMode: false
                 });
 
-                // Cargar el marcador TURTLE
+                // Cargar targets
                 await mindarController.addImageTargets('TURTLE MARK.mind');
+                console.log('✅ Marcador TURTLE MARK cargado');
                 
-                // Escuchar eventos de detección
+                // Eventos
                 mindarController.addEventListener('targetFound', onTargetFound);
                 mindarController.addEventListener('targetLost', onTargetLost);
 
-                // Iniciar el controlador
+                // Iniciar
                 await mindarController.start();
 
-                console.log('✅ MindAR inicializado - Esperando marcador...');
-
             } catch (error) {
-                console.error('❌ Error al inicializar MindAR:', error);
+                console.error('❌ Error MindAR:', error);
                 throw error;
             }
         }
 
-        // ==================== DETECCIÓN DE MARCADOR ====================
         function onTargetFound(event) {
-            console.log('✅ ¡TORTUGA DETECTADA!');
+            console.log('🎉 ¡TORTUGA DETECTADA!');
             
             document.getElementById('status-dot').classList.add('detected');
-            document.getElementById('status-text').textContent = '🐢 Tortu detectada';
-            
+            document.getElementById('status-text').textContent = '🐢 Tortuga Detectada';
             document.getElementById('model-detected-alert').classList.remove('model-detected-hidden');
             document.getElementById('detected-model-name').textContent = 'TORTUGA';
             
             updateBottomInfo('Detectada', 'Tortuga');
 
-            // Cargar el modelo 3D si no está cargado
             if (!turtleModel) {
                 loadTurtleModel();
             }
         }
 
         function onTargetLost(event) {
-            console.log('⚠️ Tortuga perdida');
+            console.log('⚠️ Marcador perdido');
             
             document.getElementById('status-dot').classList.remove('detected');
             document.getElementById('status-text').textContent = 'Escaneando...';
@@ -478,14 +489,14 @@
             
             updateBottomInfo('-', '-');
 
-            // Ocultar modelo
             if (turtleModel) {
                 turtleModel.visible = false;
             }
         }
 
-        // ==================== CARGAR MODELO 3D ====================
         function loadTurtleModel() {
+            console.log('📦 Cargando TURTLE.glb...');
+            
             gltfLoader.load('TURTLE.glb', (gltf) => {
                 if (turtleModel) {
                     scene.remove(turtleModel);
@@ -496,26 +507,19 @@
                 turtleModel.position.set(0, 0, 0);
                 
                 scene.add(turtleModel);
-                console.log('✅ Modelo TORTUGA cargado');
-            }, undefined, (error) => {
-                console.error('❌ Error cargando modelo TORTUGA:', error);
+                console.log('✅ TURTLE.glb cargado');
+                
+            }, (progress) => {
+                console.log(`📥 Cargando: ${Math.round(progress.loaded / progress.total * 100)}%`);
+            }, (error) => {
+                console.error('❌ Error cargando TURTLE.glb:', error);
             });
         }
-                    body: JSON.stringify({
-                        name: modelPath.split('/').pop(),
-                        path: modelPath,
-                        markerName: markerName
-                    })
-                });
 
-                const data = await response.json();
-
-                if (data.success) {
-        // ==================== ACTUALIZACIÓN DE UI ====================
         function updateBottomInfo(estado, modelo) {
             document.getElementById('bottom-status').textContent = estado || '-';
             document.getElementById('bottom-model').textContent = modelo || '-';
-            document.getElementById('bottom-marker').textContent = 'TURTLE';
+            document.getElementById('bottom-marker').textContent = 'TURTLE MARK';
         }
 
         function updateStatus(text, isActive) {
@@ -528,9 +532,6 @@
                 dot.classList.remove('detected');
             }
         }
-
-        let frameCount = 0;
-        let lastFpsUpdate = Date.now();
 
         function updateFPS() {
             frameCount++;
@@ -545,7 +546,6 @@
             }
         }
 
-        // ==================== RENDER LOOP ====================
         function animate() {
             requestAnimationFrame(animate);
             
@@ -555,7 +555,7 @@
             }
         }
 
-        // ==================== INICIO ====================
+        // Inicio
         window.addEventListener('load', init);
     </script>
 </body>
