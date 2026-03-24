@@ -440,11 +440,22 @@
         async function initMindAR() {
             try {
                 if (!window.MINDAR || !window.MINDAR.IMAGE) {
-                    throw new Error('MINDAR no está disponible. Intenta recargar.');
+                    throw new Error('MINDAR no está disponible');
                 }
 
+                console.log('📷 Solicitando acceso a cámara...');
+                
+                // Solicitar acceso a cámara PRIMERO
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                
+                console.log('✅ Cámara obtuvida');
+
                 mindarController = new window.MINDAR.IMAGE.Controller({
-                    imageSource: document.getElementById('canvas-ar'),
+                    video: stream,
+                    canvas: document.getElementById('canvas-ar'),
                     debugMode: false
                 });
 
@@ -458,9 +469,11 @@
 
                 // Iniciar
                 await mindarController.start();
+                console.log('✅ MindAR iniciado - Cámara activa');
 
             } catch (error) {
                 console.error('❌ Error MindAR:', error);
+                document.getElementById('status-text').textContent = '❌ ' + error.message;
                 throw error;
             }
         }
